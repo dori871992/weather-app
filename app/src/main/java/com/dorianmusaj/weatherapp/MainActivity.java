@@ -6,10 +6,6 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
-import android.support.annotation.NonNull;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.ImageView;
@@ -17,19 +13,21 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.dorianmusaj.weatherapp.network.ApiClient;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
+import com.dorianmusaj.weatherapp.viewmodel.MainActivityViewModel;
 
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Locale;
 
-import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.disposables.CompositeDisposable;
-import io.reactivex.observers.DisposableObserver;
-import io.reactivex.schedulers.Schedulers;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements MainActivityViewModel.ViewModelCallback {
 
     private static int LOCATION_PERMISSION_REQUEST_CODE = 100;
 
@@ -42,9 +40,9 @@ public class MainActivity extends AppCompatActivity {
     private ImageView mIconIv;
     private ProgressBar mProgressBar;
     private LocationManager mLocationManager;
-    private ApiClient apiClient;
     private CompositeDisposable disposable;
     DecimalFormat value;
+    private MainActivityViewModel viewModel;
 
     private LocationListener mLocationListener = new LocationListener() {
         @Override
@@ -52,9 +50,9 @@ public class MainActivity extends AppCompatActivity {
 
             if (location != null) {
 
-                fetchWeatherDataForLocation(location);
-               // mLocationManager.removeUpdates(mLocationListener);
-            }else{
+                viewModel.fetchWeatherDataForLocation(location);
+                // mLocationManager.removeUpdates(mLocationListener);
+            } else {
                 Toast.makeText(MainActivity.this, "Location not updated!", Toast.LENGTH_SHORT).show();
             }
 
@@ -77,71 +75,6 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
-    private void fetchWeatherDataForLocation(Location location) {
-
-
-        disposable.add(
-                apiClient.fetchWeather(location)
-                        .observeOn(AndroidSchedulers.mainThread())
-                        .subscribeOn(Schedulers.io())
-                        .subscribeWith(new DisposableObserver<WeatherObject>() {
-                                           @Override
-                                           public void onNext(WeatherObject weatherObject) {
-
-                                               bindWeatherData(weatherObject);
-                                           }
-
-                                           @Override
-                                           public void onError(Throwable e) {
-                                               mProgressBar.setVisibility(View.GONE);
-                                               Toast.makeText(MainActivity.this, "An error has occured!", Toast.LENGTH_SHORT).show();
-                                           }
-
-                                           @Override
-                                           public void onComplete() {
-
-                                           }
-                                       }
-
-                        ));
-
-    }
-
-    private void bindWeatherData(WeatherObject weatherObject) {
-        mProgressBar.setVisibility(View.GONE);
-
-        mCityTv.setText(weatherObject.getTimezone());
-
-        Calendar c = Calendar.getInstance();
-        c.setTimeInMillis(weatherObject.getCurrently().getTime());
-        mDateTv.setText(standardDateFormat.format(c.getTime()));
-
-        mCommentTv.setText(weatherObject.getCurrently().getSummary());
-        mRangeTv.setText(fahrenheitToCelcius(weatherObject.getCurrently().getTemperature())+"°/"
-                +fahrenheitToCelcius(weatherObject.getCurrently().getDewPoint())+"°");
-
-        mDegreeTv.setText(fahrenheitToCelcius(weatherObject.getCurrently().getApparentTemperature())+"°");
-
-        String summary = weatherObject.getCurrently().getSummary();
-
-        if(summary.contains("Clear"))
-            mIconIv.setImageResource(R.drawable.ic_weather_forecast_hot_sun_day_3859136);
-        else if (summary.contains("Rain"))
-            mIconIv.setImageResource(R.drawable.ic_weather_forecast_night_rain_climate_3859142);
-        else if (summary.contains("Storm"))
-            mIconIv.setImageResource(R.drawable.ic_weather_forecast_lightning_storm_energy_3859139);
-        else if (summary.contains("Light"))
-            mIconIv.setImageResource(R.drawable.ic_weather_forecast_lightning_cloud_storm_3859137);
-        else if (summary.contains("Snow"))
-            mIconIv.setImageResource(R.drawable.ic_weather_forecast_cloud_snowing_cloud_climate_3859131);
-        else
-            mIconIv.setImageResource(R.drawable.ic_weather_forecast_generic_3859132);
-
-
-
-
-    }
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -162,12 +95,66 @@ public class MainActivity extends AppCompatActivity {
         disposable = new CompositeDisposable();
         mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 
-        apiClient = new ApiClient();
         value = new DecimalFormat("#.#");
+
+        viewModel = new MainActivityViewModel();
+        viewModel.setCallback(this);
 
         fetchUserLocation();
 
     }
+
+
+    @Override
+    public void onStartLoading() {
+        mProgressBar.setVisibility(View.VISIBLE);
+    }
+
+    @Override
+    public void onStopLoading(String error) {
+
+        mProgressBar.setVisibility(View.GONE);
+
+        if (error != null)
+            Toast.makeText(MainActivity.this, "An error has occured!", Toast.LENGTH_SHORT).show();
+
+    }
+
+    @Override
+    public void bindWeatherData(WeatherObject weatherObject) {
+
+        onStopLoading(null);
+
+        mCityTv.setText(weatherObject.getTimezone());
+
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(weatherObject.getCurrently().getTime());
+        mDateTv.setText(standardDateFormat.format(c.getTime()));
+
+        mCommentTv.setText(weatherObject.getCurrently().getSummary());
+        mRangeTv.setText(fahrenheitToCelcius(weatherObject.getCurrently().getTemperature()) + "°/"
+                + fahrenheitToCelcius(weatherObject.getCurrently().getDewPoint()) + "°");
+
+        mDegreeTv.setText(fahrenheitToCelcius(weatherObject.getCurrently().getApparentTemperature()) + "°");
+
+        String summary = weatherObject.getCurrently().getSummary();
+
+        if (summary.contains("Clear"))
+            mIconIv.setImageResource(R.drawable.ic_weather_forecast_hot_sun_day_3859136);
+        else if (summary.contains("Rain"))
+            mIconIv.setImageResource(R.drawable.ic_weather_forecast_night_rain_climate_3859142);
+        else if (summary.contains("Storm"))
+            mIconIv.setImageResource(R.drawable.ic_weather_forecast_lightning_storm_energy_3859139);
+        else if (summary.contains("Light"))
+            mIconIv.setImageResource(R.drawable.ic_weather_forecast_lightning_cloud_storm_3859137);
+        else if (summary.contains("Snow"))
+            mIconIv.setImageResource(R.drawable.ic_weather_forecast_cloud_snowing_cloud_climate_3859131);
+        else
+            mIconIv.setImageResource(R.drawable.ic_weather_forecast_generic_3859132);
+
+
+    }
+
 
     @Override
     protected void onDestroy() {
@@ -207,8 +194,8 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public String fahrenheitToCelcius (double fahrenheit){
-        double celcius = ( 5 *(fahrenheit - 32.0)) / 9.0;
+    public String fahrenheitToCelcius(double fahrenheit) {
+        double celcius = (5 * (fahrenheit - 32.0)) / 9.0;
         return value.format(celcius);
     }
 
